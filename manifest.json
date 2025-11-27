@@ -6,14 +6,12 @@
   "permissions": [
     "alarms",
     "storage",
-    "identity",
     "tabs",
     "activeTab",
     "scripting"
   ],
   "host_permissions": [
-    "https://sheets.googleapis.com/*",
-    "https://www.googleapis.com/*",
+    "https://docs.google.com/*",
     "<all_urls>"
   ],
   "background": {
@@ -44,11 +42,5 @@
       ],
       "run_at": "document_idle"
     }
-  ],
-  "oauth2": {
-    "client_id": "YOUR_CLIENT_ID_HERE.apps.googleusercontent.com",
-    "scopes": [
-      "https://www.googleapis.com/auth/spreadsheets.readonly"
-    ]
-  }
+  ]
 }

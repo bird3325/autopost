@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Extension Test</title>
+</head>
+
+<body>
+    <h1>Extension Load Test</h1>
+    <button id="test-btn">Test Extension</button>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('test-btn').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('result');
+            try {
+                const response = await chrome.runtime.sendMessage({ type: 'GET_PLATFORMS' });
+                resultDiv.innerHTML = '<p style="color: green;">✅ Extension loaded successfully!</p>';
+                resultDiv.innerHTML += '<pre>' + JSON.stringify(response, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = '<p style="color: red;">❌ Error: ' + error.message + '</p>';
+            }
+        });
+    </script>
+</body>
+
+</html>

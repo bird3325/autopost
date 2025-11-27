@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Auto-Post Scheduler</title>
   <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
   <div class="container">
     <!-- 헤더 -->
@@ -18,7 +20,7 @@
 
     <!-- 탭 네비게이션 -->
     <nav class="tabs">
-      <button class="tab-btn active" data-tab="sheets">📄 시트 연결</button>
+      <button class="tab-btn active" data-tab="sheets">📄 시트 목록</button>
       <button class="tab-btn" data-tab="platforms">🌐 플랫폼</button>
       <button class="tab-btn" data-tab="schedules">⏰ 스케줄</button>
       <button class="tab-btn" data-tab="logs">📋 로그</button>
@@ -26,36 +28,52 @@
 
     <!-- 탭 콘텐츠 -->
     <main class="content">
-      <!-- 시트 연결 탭 -->
+      <!-- 시트 목록 탭 -->
       <section class="tab-content active" id="sheets-tab">
         <div class="card">
-          <h2 class="card-title">Google Sheets 연결</h2>
-          
-          <div class="auth-status" id="auth-status">
-            <span class="status-dot"></span>
-            <span class="status-text">미연결</span>
-          </div>
-
-          <button class="btn btn-primary" id="auth-btn">
-            🔐 Google 계정 연결
-          </button>
-
-          <div class="form-group" id="sheets-config" style="display: none;">
-            <label for="sheets-url">시트 URL</label>
-            <input type="text" id="sheets-url" placeholder="https://docs.google.com/spreadsheets/d/...">
-            
-            <label for="sheets-range">데이터 범위</label>
-            <input type="text" id="sheets-range" placeholder="Sheet1!A:Z" value="Sheet1!A:Z">
-            
-            <label for="date-column">날짜 컬럼명</label>
-            <input type="text" id="date-column" placeholder="날짜" value="날짜">
-            
-            <button class="btn btn-secondary" id="test-sheets-btn">
-              🧪 데이터 테스트
+          <div class="card-header">
+            <h2 class="card-title">Google Sheets 목록</h2>
+            <button class="btn btn-sm btn-primary" id="add-sheet-btn">
+              ➕ 추가
             </button>
           </div>
 
-          <div class="test-result" id="test-result"></div>
+          <div class="sheet-list" id="sheet-list">
+            <div class="empty-state">
+              <p>등록된 시트가 없습니다</p>
+              <p class="text-muted">시트를 추가하여 자동 게시를 시작하세요</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 시트 추가 모달 -->
+        <div class="modal" id="sheet-modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>시트 추가</h3>
+              <button class="modal-close">&times;</button>
+            </div>
+
+            <div class="modal-body">
+              <div class="form-group">
+                <label>시트 이름</label>
+                <input type="text" id="sheet-name" placeholder="예: 메인 시트">
+              </div>
+
+              <div class="form-group">
+                <label>시트 공유 링크</label>
+                <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/...">
+                <p class="text-muted" style="font-size: 12px; margin-top: 4px;">
+                  💡 시트를 "링크가 있는 모든 사용자" 공유로 설정하세요
+                </p>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button class="btn btn-secondary modal-close">취소</button>
+              <button class="btn btn-primary" id="save-sheet-btn">저장</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -68,7 +86,7 @@
               ➕ 추가
             </button>
           </div>
-          
+
           <div class="platform-list" id="platform-list">
             <div class="empty-state">
               <p>등록된 플랫폼이 없습니다</p>
@@ -84,8 +102,15 @@
               <h3>플랫폼 추가</h3>
               <button class="modal-close">&times;</button>
             </div>
-            
+
             <div class="modal-body">
+              <div class="form-group">
+                <label>사용할 시트 선택</label>
+                <select id="platform-sheet">
+                  <option value="">시트를 선택하세요</option>
+                </select>
+              </div>
+
               <div class="form-group">
                 <label>플랫폼 타입</label>
                 <select id="platform-type">
@@ -123,17 +148,17 @@
               <div class="form-group">
                 <h4>필드 매핑</h4>
                 <p class="text-muted">시트 컬럼명 → 입력 필드</p>
-                
+
                 <div class="mapping-item">
                   <input type="text" placeholder="제목 (시트 컬럼명)" id="map-title-col" value="제목">
                   <span>→</span>
                   <span>제목 필드</span>
                 </div>
-                
+
                 <div class="mapping-item">
-                  <input type="text" placeholder="내용 (시트 컬럼명)" id="map-content-col" value="내용">
+                  <input type="text" placeholder="링크 (시트 컬럼명)" id="map-link-col" value="링크">
                   <span>→</span>
-                  <span>내용 필드</span>
+                  <span>링크 필드</span>
                 </div>
               </div>
 
@@ -142,7 +167,7 @@
                   <input type="checkbox" id="require-login" checked>
                   <span>로그인 필요</span>
                 </label>
-                
+
                 <label class="checkbox-label">
                   <input type="checkbox" id="auto-publish" checked>
                   <span>자동 게시</span>
@@ -167,7 +192,7 @@
               ➕ 추가
             </button>
           </div>
-          
+
           <div class="schedule-list" id="schedule-list">
             <div class="empty-state">
               <p>등록된 스케줄이 없습니다</p>
@@ -183,7 +208,7 @@
               <h3>스케줄 추가</h3>
               <button class="modal-close">&times;</button>
             </div>
-            
+
             <div class="modal-body">
               <div class="form-group">
                 <label>플랫폼 선택</label>
@@ -234,7 +259,7 @@
               🔄 새로고침
             </button>
           </div>
-          
+
           <div class="log-list" id="log-list">
             <div class="empty-state">
               <p>로그가 없습니다</p>
@@ -247,4 +272,5 @@
 
   <script src="popup.js"></script>
 </body>
+
 </html>
