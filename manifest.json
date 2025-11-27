@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "Auto-Post Scheduler",
+  "version": "1.0.0",
+  "description": "구글 시트 기반 자동 게시 스케줄러 - Google Sheets 데이터를 여러 플랫폼에 자동으로 게시합니다",
+  "permissions": [
+    "alarms",
+    "storage",
+    "identity",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://sheets.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content/automation.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "oauth2": {
+    "client_id": "YOUR_CLIENT_ID_HERE.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/spreadsheets.readonly"
+    ]
+  }
+}

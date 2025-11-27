@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto-Post Scheduler</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 헤더 -->
+    <header class="header">
+      <div class="header-content">
+        <h1 class="title">📊 Auto-Post</h1>
+        <p class="subtitle">구글 시트 자동 게시 스케줄러</p>
+      </div>
+    </header>
+
+    <!-- 탭 네비게이션 -->
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="sheets">📄 시트 연결</button>
+      <button class="tab-btn" data-tab="platforms">🌐 플랫폼</button>
+      <button class="tab-btn" data-tab="schedules">⏰ 스케줄</button>
+      <button class="tab-btn" data-tab="logs">📋 로그</button>
+    </nav>
+
+    <!-- 탭 콘텐츠 -->
+    <main class="content">
+      <!-- 시트 연결 탭 -->
+      <section class="tab-content active" id="sheets-tab">
+        <div class="card">
+          <h2 class="card-title">Google Sheets 연결</h2>
+          
+          <div class="auth-status" id="auth-status">
+            <span class="status-dot"></span>
+            <span class="status-text">미연결</span>
+          </div>
+
+          <button class="btn btn-primary" id="auth-btn">
+            🔐 Google 계정 연결
+          </button>
+
+          <div class="form-group" id="sheets-config" style="display: none;">
+            <label for="sheets-url">시트 URL</label>
+            <input type="text" id="sheets-url" placeholder="https://docs.google.com/spreadsheets/d/...">
+            
+            <label for="sheets-range">데이터 범위</label>
+            <input type="text" id="sheets-range" placeholder="Sheet1!A:Z" value="Sheet1!A:Z">
+            
+            <label for="date-column">날짜 컬럼명</label>
+            <input type="text" id="date-column" placeholder="날짜" value="날짜">
+            
+            <button class="btn btn-secondary" id="test-sheets-btn">
+              🧪 데이터 테스트
+            </button>
+          </div>
+
+          <div class="test-result" id="test-result"></div>
+        </div>
+      </section>
+
+      <!-- 플랫폼 탭 -->
+      <section class="tab-content" id="platforms-tab">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">플랫폼 목록</h2>
+            <button class="btn btn-sm btn-primary" id="add-platform-btn">
+              ➕ 추가
+            </button>
+          </div>
+          
+          <div class="platform-list" id="platform-list">
+            <div class="empty-state">
+              <p>등록된 플랫폼이 없습니다</p>
+              <p class="text-muted">플랫폼을 추가하여 자동 게시를 시작하세요</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 플랫폼 추가 모달 -->
+        <div class="modal" id="platform-modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>플랫폼 추가</h3>
+              <button class="modal-close">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+              <div class="form-group">
+                <label>플랫폼 타입</label>
+                <select id="platform-type">
+                  <option value="naver_blog">네이버 블로그</option>
+                  <option value="tistory">티스토리</option>
+                  <option value="custom">커스텀</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>플랫폼 이름</label>
+                <input type="text" id="platform-name" placeholder="예: 내 블로그">
+              </div>
+
+              <div class="form-group">
+                <label>로그인 URL</label>
+                <input type="text" id="login-url" placeholder="https://...">
+              </div>
+
+              <div class="form-group">
+                <label>게시 URL</label>
+                <input type="text" id="post-url" placeholder="https://...">
+              </div>
+
+              <div class="form-group">
+                <label>아이디</label>
+                <input type="text" id="platform-username" placeholder="아이디">
+              </div>
+
+              <div class="form-group">
+                <label>비밀번호</label>
+                <input type="password" id="platform-password" placeholder="비밀번호">
+              </div>
+
+              <div class="form-group">
+                <h4>필드 매핑</h4>
+                <p class="text-muted">시트 컬럼명 → 입력 필드</p>
+                
+                <div class="mapping-item">
+                  <input type="text" placeholder="제목 (시트 컬럼명)" id="map-title-col" value="제목">
+                  <span>→</span>
+                  <span>제목 필드</span>
+                </div>
+                
+                <div class="mapping-item">
+                  <input type="text" placeholder="내용 (시트 컬럼명)" id="map-content-col" value="내용">
+                  <span>→</span>
+                  <span>내용 필드</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="require-login" checked>
+                  <span>로그인 필요</span>
+                </label>
+                
+                <label class="checkbox-label">
+                  <input type="checkbox" id="auto-publish" checked>
+                  <span>자동 게시</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button class="btn btn-secondary modal-close">취소</button>
+              <button class="btn btn-primary" id="save-platform-btn">저장</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 스케줄 탭 -->
+      <section class="tab-content" id="schedules-tab">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">스케줄 목록</h2>
+            <button class="btn btn-sm btn-primary" id="add-schedule-btn">
+              ➕ 추가
+            </button>
+          </div>
+          
+          <div class="schedule-list" id="schedule-list">
+            <div class="empty-state">
+              <p>등록된 스케줄이 없습니다</p>
+              <p class="text-muted">스케줄을 추가하여 자동 실행하세요</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 스케줄 추가 모달 -->
+        <div class="modal" id="schedule-modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>스케줄 추가</h3>
+              <button class="modal-close">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+              <div class="form-group">
+                <label>플랫폼 선택</label>
+                <select id="schedule-platform">
+                  <option value="">플랫폼을 선택하세요</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>스케줄 타입</label>
+                <select id="schedule-type">
+                  <option value="daily">매일</option>
+                  <option value="interval">주기적</option>
+                  <option value="once">일회성</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="daily-time-group">
+                <label>실행 시간</label>
+                <input type="time" id="schedule-time" value="09:00">
+              </div>
+
+              <div class="form-group" id="interval-group" style="display: none;">
+                <label>실행 간격 (분)</label>
+                <input type="number" id="schedule-interval" value="60" min="1">
+              </div>
+
+              <div class="form-group" id="once-datetime-group" style="display: none;">
+                <label>실행 일시</label>
+                <input type="datetime-local" id="schedule-datetime">
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button class="btn btn-secondary modal-close">취소</button>
+              <button class="btn btn-primary" id="save-schedule-btn">저장</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 로그 탭 -->
+      <section class="tab-content" id="logs-tab">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">실행 로그</h2>
+            <button class="btn btn-sm btn-secondary" id="refresh-logs-btn">
+              🔄 새로고침
+            </button>
+          </div>
+          
+          <div class="log-list" id="log-list">
+            <div class="empty-state">
+              <p>로그가 없습니다</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
