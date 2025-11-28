@@ -40,7 +40,7 @@
       "js": [
         "content/automation.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ]
 }

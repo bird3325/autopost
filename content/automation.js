@@ -1,40 +1,89 @@
 /**
- * Content Script - Automation Executor
- * 페이지에서 실제 자동화 작업 수행
+ * Content Script - 페이지 내 자동화 수행
  */
+
+// 알림/확인 창 자동 차단 스크립트 주입
+(function () {
+    const script = document.createElement('script');
+    script.textContent = `
+        (function() {
+            window.alert = function(msg) { console.log('[Auto-Post] Alert dismissed:', msg); return true; };
+            window.confirm = function(msg) { console.log('[Auto-Post] Confirm dismissed (Cancel):', msg); return false; };
+            window.prompt = function(msg) { console.log('[Auto-Post] Prompt dismissed (Cancel):', msg); return null; };
+            
+            // beforeunload 이벤트 차단
+            window.addEventListener('beforeunload', function(e) {
+                e.preventDefault();
+                delete e['returnValue'];
+            }, true);
+            
+            console.log('[Auto-Post] Alert blocker activated');
+        })();
+    `;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+})();
+
+// 페이지 로드 후 자동으로 팝업 닫기
+window.addEventListener('load', function () {
+    setTimeout(function () {
+        console.log('[Auto-Post] Looking for popup to close...');
+
+        // 방법 1: "취소" 텍스트로 검색
+        let found = false;
+        const buttons = document.querySelectorAll('button, a, .btn');
+        for (const btn of buttons) {
+            if (btn.textContent.trim() === '취소') {
+                console.log('[Auto-Post] Found cancel button, clicking...');
+                btn.click();
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            console.log('[Auto-Post] No popup found');
+        }
+    }, 2000);
+});
 
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     handleAutomationMessage(request, sendResponse);
-    return true; // 비동기 응답
+    return true;
 });
 
-/**
- * 메시지 핸들러
- */
 async function handleAutomationMessage(request, sendResponse) {
     try {
         switch (request.action) {
             case 'LOGIN':
-                await handleLogin(request);
-                sendResponse({ success: true });
+                const loginResult = await handleLogin(request);
+                sendResponse({ success: true, ...loginResult });
                 break;
-
             case 'FILL_FORM':
                 await handleFillForm(request);
                 sendResponse({ success: true });
                 break;
-
+            case 'FILL_INPUT':
+                await handleFillInput(request);
+                sendResponse({ success: true });
+                break;
+            case 'TYPE':
+                await handleType(request);
+                sendResponse({ success: true });
+                break;
             case 'CLICK':
                 await handleClick(request);
                 sendResponse({ success: true });
                 break;
-
+            case 'CLICK_TEXT':
+                await handleClickByText(request);
+                sendResponse({ success: true });
+                break;
             case 'WAIT':
                 await wait(request.ms || 1000);
                 sendResponse({ success: true });
                 break;
-
             default:
                 sendResponse({ success: false, error: '알 수 없는 액션' });
         }
@@ -44,202 +93,135 @@ async function handleAutomationMessage(request, sendResponse) {
     }
 }
 
-/**
- * 로그인 처리
- */
 async function handleLogin(request) {
     const { selectors, username, password } = request;
-
-    // 사용자명 입력
-    const usernameInput = await waitForElement(selectors.username);
-    fillInput(usernameInput, username);
-
-    // 대기
-    await wait(500);
-
-    // 비밀번호 입력
-    const passwordInput = await waitForElement(selectors.password);
-    fillInput(passwordInput, password);
-
-    // 대기
-    await wait(500);
-
-    // 로그인 버튼 클릭
-    const submitButton = await waitForElement(selectors.submitButton);
-    clickElement(submitButton);
-
-    console.log('Login executed');
+    try {
+        const usernameInput = await waitForElement(selectors.username, 3000);
+        fillInput(usernameInput, username);
+        await wait(500);
+        const passwordInput = await waitForElement(selectors.password);
+        fillInput(passwordInput, password);
+        await wait(500);
+        const submitButton = await waitForElement(selectors.submitButton);
+        clickElement(submitButton);
+        console.log('Login executed');
+        return { executed: true };
+    } catch (error) {
+        console.log('Login form not found, assuming already logged in');
+        return { executed: false, reason: 'already_logged_in' };
+    }
 }
 
-/**
- * 폼 작성 처리
- */
 async function handleFillForm(request) {
     const { selectors, data } = request;
-
-    // 제목 입력
     if (selectors.title && data.title) {
         const titleInput = await waitForElement(selectors.title, 5000);
         fillInput(titleInput, data.title);
         await wait(300);
     }
-
-    // 내용 입력
     if (selectors.content && data.content) {
         const contentInput = await waitForElement(selectors.content, 5000);
-
-        // 에디터 타입에 따라 다르게 처리
         if (contentInput.contentEditable === 'true' || contentInput.isContentEditable) {
-            // ContentEditable 에디터
             contentInput.innerHTML = data.content;
             contentInput.dispatchEvent(new Event('input', { bubbles: true }));
         } else {
-            // 일반 텍스트 입력
             fillInput(contentInput, data.content);
         }
         await wait(300);
     }
-
-    // 카테고리 선택
-    if (selectors.category && data.category) {
-        try {
-            const categorySelect = await waitForElement(selectors.category, 3000);
-            selectOption(categorySelect, data.category);
-            await wait(300);
-        } catch (error) {
-            console.warn('Category selection failed:', error);
-        }
-    }
-
-    // 기타 커스텀 필드
-    for (const [field, value] of Object.entries(data)) {
-        if (field !== 'title' && field !== 'content' && field !== 'category' && selectors[field]) {
-            try {
-                const element = await waitForElement(selectors[field], 3000);
-                fillInput(element, value);
-                await wait(300);
-            } catch (error) {
-                console.warn(`Failed to fill field ${field}:`, error);
-            }
-        }
-    }
-
     console.log('Form filled');
 }
 
-/**
- * 클릭 처리
- */
-async function handleClick(request) {
-    const { selector } = request;
-    const element = await waitForElement(selector);
-    clickElement(element);
-    console.log('Click executed:', selector);
+async function handleFillInput(request) {
+    const { selector, value } = request;
+    const element = await waitForElement(selector, 5000);
+    if (element.contentEditable === 'true' || element.isContentEditable) {
+        element.innerHTML = value;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+        fillInput(element, value);
+    }
+    console.log('Input filled:', selector);
 }
 
-/**
- * 입력 필드 채우기
- */
-function fillInput(element, value) {
-    if (!element) return;
+async function handleType(request) {
+    const { selector, value } = request;
+    const element = await waitForElement(selector, 5000);
+    element.focus();
 
-    // 기존 값 삭제
-    element.value = '';
+    for (let i = 0; i < value.length; i++) {
+        const char = value[i];
+        if (element.contentEditable === 'true' || element.isContentEditable) {
+            document.execCommand('insertText', false, char);
+        } else {
+            const start = element.selectionStart || 0;
+            const end = element.selectionEnd || 0;
+            const text = element.value || '';
+            element.value = text.substring(0, start) + char + text.substring(end);
+            element.selectionStart = element.selectionEnd = start + 1;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        const delay = Math.floor(Math.random() * 100) + 50;
+        await wait(delay);
+    }
 
-    // 새 값 입력
-    element.value = value;
-
-    // 이벤트 트리거 (React 등을 위해)
-    element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
     element.dispatchEvent(new Event('blur', { bubbles: true }));
+    console.log('Typing completed:', selector);
 }
 
-/**
- * 선택 옵션 설정
- */
-function selectOption(selectElement, value) {
-    if (!selectElement) return;
+async function handleClick(request) {
+    const { selector } = request;
+    const element = await waitForElement(selector, 5000);
+    clickElement(element);
+    console.log('Clicked:', selector);
+}
 
-    // 값으로 찾기
-    for (let i = 0; i < selectElement.options.length; i++) {
-        if (selectElement.options[i].value === value ||
-            selectElement.options[i].text === value) {
-            selectElement.selectedIndex = i;
-            selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+async function handleClickByText(request) {
+    const { text } = request;
+    const elements = document.querySelectorAll('button, a, div[role="option"], div[role="menuitem"], span');
+    for (const el of elements) {
+        if (el.textContent.includes(text)) {
+            clickElement(el);
+            console.log('Clicked element with text:', text);
             return;
         }
     }
-
-    console.warn('Option not found:', value);
+    throw new Error(`Element with text "${text}" not found`);
 }
 
-/**
- * 요소 클릭
- */
-function clickElement(element) {
-    if (!element) return;
-
-    // 여러 방법으로 클릭 시도
-    try {
-        element.click();
-    } catch (error) {
-        // 대체 방법
-        const clickEvent = new MouseEvent('click', {
-            bubbles: true,
-            cancelable: true,
-            view: window
-        });
-        element.dispatchEvent(clickEvent);
-    }
-}
-
-/**
- * 요소 대기 (나타날 때까지)
- */
-async function waitForElement(selector, timeout = 10000) {
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeout) {
+function waitForElement(selector, timeout = 10000) {
+    return new Promise((resolve, reject) => {
         const element = document.querySelector(selector);
-        if (element && isElementVisible(element)) {
-            return element;
+        if (element) {
+            resolve(element);
+            return;
         }
-        await wait(100);
-    }
-
-    throw new Error(`Element ${selector} not found within ${timeout}ms`);
+        const observer = new MutationObserver(() => {
+            const element = document.querySelector(selector);
+            if (element) {
+                observer.disconnect();
+                resolve(element);
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Element not found: ${selector}`));
+        }, timeout);
+    });
 }
 
-/**
- * 요소 가시성 확인
- */
-function isElementVisible(element) {
-    if (!element) return false;
-
-    const style = window.getComputedStyle(element);
-    return style.display !== 'none' &&
-        style.visibility !== 'hidden' &&
-        style.opacity !== '0' &&
-        element.offsetParent !== null;
+function fillInput(element, value) {
+    element.value = value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-/**
- * 대기 함수
- */
+function clickElement(element) {
+    element.click();
+}
+
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
-
-/**
- * iframe 내부 요소 찾기
- */
-function findElementInIframe(selector, iframeSelector) {
-    const iframe = document.querySelector(iframeSelector);
-    if (!iframe) return null;
-
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-    return iframeDoc.querySelector(selector);
-}
-
-console.log('AutoPost Content Script loaded');

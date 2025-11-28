@@ -7,6 +7,8 @@ let currentPlatforms = [];
 let currentSchedules = [];
 let currentSheets = [];
 let editingSheetId = null;
+let currentDrafts = [];
+let currentEditingDraft = null;
 
 // 초기화
 document.addEventListener('DOMContentLoaded', async () => {
@@ -15,6 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadSheets();
     await loadPlatforms();
     await loadSchedules();
+    await loadDrafts();
     await loadLogs();
     registerEventListeners();
 });
@@ -47,6 +50,12 @@ function initializeModals() {
 
 // 이벤트 리스너
 function registerEventListeners() {
+    // Compose tab
+    document.getElementById('save-draft-btn').addEventListener('click', saveDraft);
+    document.getElementById('publish-now-btn').addEventListener('click', publishNow);
+    document.getElementById('refresh-drafts-btn').addEventListener('click', loadDrafts);
+
+    // Sheets
     document.getElementById('add-sheet-btn').addEventListener('click', () => {
         editingSheetId = null;
         document.getElementById('sheet-name').value = '';
@@ -54,12 +63,18 @@ function registerEventListeners() {
         document.getElementById('sheet-modal').style.display = 'flex';
     });
     document.getElementById('save-sheet-btn').addEventListener('click', saveSheet);
+
+    // Platforms
     document.getElementById('add-platform-btn').addEventListener('click', () => { updateSheetOptions(); document.getElementById('platform-modal').style.display = 'flex'; });
     document.getElementById('save-platform-btn').addEventListener('click', savePlatform);
     document.getElementById('platform-type').addEventListener('change', updatePlatformFields);
+
+    // Schedules
     document.getElementById('add-schedule-btn').addEventListener('click', () => { updateSchedulePlatformOptions(); document.getElementById('schedule-modal').style.display = 'flex'; });
     document.getElementById('save-schedule-btn').addEventListener('click', saveSchedule);
     document.getElementById('schedule-type').addEventListener('change', updateScheduleFields);
+
+    // Logs
     document.getElementById('refresh-logs-btn').addEventListener('click', loadLogs);
 }
 
@@ -189,10 +204,10 @@ function renderPlatforms() {
 
     // 이벤트 리스너 등록
     list.querySelectorAll('[data-action="test-platform"]').forEach(btn => {
-        btn.addEventListener('click', () => testPlatform(parseInt(btn.dataset.id)));
+        btn.addEventListener('click', () => testPlatform(Number(btn.dataset.id)));
     });
     list.querySelectorAll('[data-action="delete-platform"]').forEach(btn => {
-        btn.addEventListener('click', () => deletePlatform(parseInt(btn.dataset.id)));
+        btn.addEventListener('click', () => deletePlatform(Number(btn.dataset.id)));
     });
 }
 
@@ -274,15 +289,37 @@ function renderSchedules() {
         list.innerHTML = '<div class="empty-state"><p>등록된 스케줄이 없습니다</p><p class="text-muted">스케줄을 추가하여 자동 실행하세요</p></div>';
         return;
     }
-    list.innerHTML = currentSchedules.map(schedule => `<div class="schedule-item"><div class="schedule-info"><h4>${schedule.platform?.name || '플랫폼'}</h4><p class="text-muted">${formatSchedule(schedule)}</p></div><div class="schedule-actions"><label class="toggle"><input type="checkbox" ${schedule.enabled ? 'checked' : ''} data-action="toggle-schedule" data-id="${schedule.id}"><span class="toggle-slider"></span></label><button class="btn btn-sm btn-danger" data-action="delete-schedule" data-id="${schedule.id}">🗑️</button></div></div>`).join('');
+    list.innerHTML = currentSchedules.map(schedule => `<div class="schedule-item"><div class="schedule-info"><h4>${schedule.platform?.name || '플랫폼'}</h4><p class="text-muted">${formatSchedule(schedule)}</p></div><div class="schedule-actions"><button class="btn btn-sm btn-primary" data-action="run-schedule" data-id="${schedule.id}" title="즉시 실행">⚡</button><label class="toggle"><input type="checkbox" ${schedule.enabled ? 'checked' : ''} data-action="toggle-schedule" data-id="${schedule.id}"><span class="toggle-slider"></span></label><button class="btn btn-sm btn-danger" data-action="delete-schedule" data-id="${schedule.id}">🗑️</button></div></div>`).join('');
 
     // 이벤트 리스너 등록
+    list.querySelectorAll('[data-action="run-schedule"]').forEach(btn => {
+        btn.addEventListener('click', () => executeSchedule(parseInt(btn.dataset.id)));
+    });
     list.querySelectorAll('[data-action="toggle-schedule"]').forEach(checkbox => {
         checkbox.addEventListener('change', () => toggleSchedule(parseInt(checkbox.dataset.id), checkbox.checked));
     });
     list.querySelectorAll('[data-action="delete-schedule"]').forEach(btn => {
         btn.addEventListener('click', () => deleteSchedule(parseInt(btn.dataset.id)));
     });
+}
+
+// 스케줄 즉시 실행
+async function executeSchedule(scheduleId) {
+    if (!confirm('지금 즉시 실행하시겠습니까?')) return;
+    try {
+        showLoading('실행 중...');
+        const response = await chrome.runtime.sendMessage({ type: 'EXECUTE_SCHEDULE', scheduleId });
+        if (response.success) {
+            showSuccess('스케줄이 실행되었습니다. 로그를 확인하세요.');
+            await loadLogs(); // 로그 탭 업데이트
+        } else {
+            showError('실행 실패: ' + response.error);
+        }
+    } catch (error) {
+        showError('오류: ' + error.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 // 스케줄 포맷팅
@@ -315,9 +352,21 @@ async function saveSchedule() {
         if (!platformId) { showError('플랫폼을 선택하세요'); return; }
         const platform = currentPlatforms.find(p => p.id == platformId);
         const schedule = { type, platform };
-        if (type === 'daily') schedule.time = document.getElementById('schedule-time').value;
-        else if (type === 'interval') schedule.intervalMinutes = parseInt(document.getElementById('schedule-interval').value);
-        else if (type === 'once') schedule.runAt = document.getElementById('schedule-datetime').value;
+        if (type === 'daily') {
+            const time = document.getElementById('schedule-time').value;
+            if (!time) { showError('실행 시간을 입력하세요'); return; }
+            schedule.time = time;
+        }
+        else if (type === 'interval') {
+            const interval = parseInt(document.getElementById('schedule-interval').value);
+            if (!interval || isNaN(interval) || interval < 1) { showError('올바른 실행 간격을 입력하세요'); return; }
+            schedule.intervalMinutes = interval;
+        }
+        else if (type === 'once') {
+            const runAt = document.getElementById('schedule-datetime').value;
+            if (!runAt) { showError('실행 일시를 입력하세요'); return; }
+            schedule.runAt = runAt;
+        }
         showLoading('저장 중...');
         const response = await chrome.runtime.sendMessage({ type: 'CREATE_SCHEDULE', schedule });
         if (response.success) {
@@ -385,3 +434,204 @@ function showLoading(message) { console.log('Loading:', message); }
 function hideLoading() { }
 function showSuccess(message) { alert(message); }
 function showError(message) { alert('오류: ' + message); }
+
+// 직접 작성 기능
+async function loadDrafts() {
+    try {
+        const drafts = await DraftManager.getAll();
+        currentDrafts = drafts;
+        renderDrafts();
+        updateComposePlatformOptions();
+    } catch (error) {
+        console.error('Failed to load drafts:', error);
+    }
+}
+
+function renderDrafts() {
+    const list = document.getElementById('draft-list');
+    if (currentDrafts.length === 0) {
+        list.innerHTML = '<div class="empty-state"><p>저장된 초안이 없습니다</p><p class="text-muted">작성 중인 글을 초안으로 저장하세요</p></div>';
+        return;
+    }
+
+    list.innerHTML = currentDrafts.map(draft => {
+        const platform = currentPlatforms.find(p => p.id === draft.platformId);
+        const platformName = platform ? platform.name : '플랫폼 없음';
+        const date = new Date(draft.updatedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const preview = draft.content.substring(0, 50) + (draft.content.length > 50 ? '...' : '');
+
+        return `
+            <div class="draft-item" data-draft-id="${draft.id}">
+                <div class="draft-title">${draft.title || '(제목 없음)'}</div>
+                <div class="draft-meta">
+                    <span>📅 ${date}</span>
+                    <span>🌐 ${platformName}</span>
+                </div>
+                ${preview ? `<div class="draft-content-preview">${preview}</div>` : ''}
+                <div class="draft-actions">
+                    <button class="btn btn-sm btn-secondary" data-action="load-draft" data-id="${draft.id}">✏️ 편집</button>
+                    <button class="btn btn-sm btn-primary" data-action="publish-draft" data-id="${draft.id}">🚀 게시</button>
+                    <button class="btn btn-sm btn-danger" data-action="delete-draft" data-id="${draft.id}">🗑️</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // 이벤트 리스너
+    list.querySelectorAll('[data-action="load-draft"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            loadDraftToForm(parseInt(btn.dataset.id));
+        });
+    });
+
+    list.querySelectorAll('[data-action="publish-draft"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            publishDraft(parseInt(btn.dataset.id));
+        });
+    });
+
+    list.querySelectorAll('[data-action="delete-draft"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteDraft(parseInt(btn.dataset.id));
+        });
+    });
+}
+
+function updateComposePlatformOptions() {
+    const select = document.getElementById('compose-platform');
+    select.innerHTML = '<option value="">플랫폼을 선택하세요</option>' +
+        currentPlatforms.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+}
+
+async function saveDraft() {
+    try {
+        const title = document.getElementById('compose-title').value;
+        const content = document.getElementById('compose-content').value;
+        const category = document.getElementById('compose-category').value;
+        const platformId = parseInt(document.getElementById('compose-platform').value) || null;
+
+        if (!title && !content) {
+            showError('제목 또는 내용을 입력하세요');
+            return;
+        }
+
+        const draftData = { title, content, category, platformId };
+
+        let result;
+        if (currentEditingDraft) {
+            result = await DraftManager.update(currentEditingDraft, draftData);
+        } else {
+            result = await DraftManager.create(draftData);
+        }
+
+        if (result.success) {
+            showSuccess(currentEditingDraft ? '초안이 업데이트되었습니다' : '초안이 저장되었습니다');
+            currentEditingDraft = null;
+            await loadDrafts();
+        } else {
+            showError('저장 실패: ' + result.error);
+        }
+    } catch (error) {
+        showError('오류: ' + error.message);
+    }
+}
+
+async function publishNow() {
+    try {
+        const title = document.getElementById('compose-title').value;
+        const content = document.getElementById('compose-content').value;
+        const category = document.getElementById('compose-category').value;
+        const platformId = parseInt(document.getElementById('compose-platform').value);
+
+        if (!title || !content) {
+            showError('제목과 내용을 모두 입력하세요');
+            return;
+        }
+
+        if (!platformId) {
+            showError('플랫폼을 선택하세요');
+            return;
+        }
+
+        const platform = currentPlatforms.find(p => p.id === platformId);
+        if (!platform) {
+            showError('선택한 플랫폼을 찾을 수 없습니다');
+            return;
+        }
+
+        if (!confirm(`"${platform.name}"에 즉시 게시하시겠습니까?`)) return;
+
+        showLoading('게시 중...');
+
+        const postData = {
+            title,
+            content,
+            category,
+            platform,
+            isDirect: true
+        };
+
+        const response = await chrome.runtime.sendMessage({
+            type: 'PUBLISH_DIRECT_POST',
+            postData
+        });
+
+        if (response && response.success) {
+            showSuccess('게시가 완료되었습니다!');
+            // 폼 초기화
+            document.getElementById('compose-title').value = '';
+            document.getElementById('compose-content').value = '';
+            document.getElementById('compose-category').value = '';
+            document.getElementById('compose-platform').value = '';
+            currentEditingDraft = null;
+            await loadLogs();
+        } else {
+            showError('게시 실패: ' + (response?.error || '알 수 없는 오류'));
+        }
+    } catch (error) {
+        showError('오류: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+function loadDraftToForm(draftId) {
+    const draft = currentDrafts.find(d => d.id === draftId);
+    if (!draft) return;
+
+    document.getElementById('compose-title').value = draft.title || '';
+    document.getElementById('compose-content').value = draft.content || '';
+    document.getElementById('compose-category').value = draft.category || '';
+    document.getElementById('compose-platform').value = draft.platformId || '';
+
+    currentEditingDraft = draftId;
+    showSuccess('초안을 불러왔습니다');
+}
+
+async function publishDraft(draftId) {
+    const draft = currentDrafts.find(d => d.id === draftId);
+    if (!draft) return;
+
+    // 폼에 로드하고 즉시 게시
+    loadDraftToForm(draftId);
+    await publishNow();
+
+    // 성공하면 초안 삭제
+    await DraftManager.delete(draftId);
+    await loadDrafts();
+}
+
+async function deleteDraft(draftId) {
+    if (!confirm('정말 삭제하시겠습니까?')) return;
+
+    const result = await DraftManager.delete(draftId);
+    if (result.success) {
+        showSuccess('초안이 삭제되었습니다');
+        await loadDrafts();
+    } else {
+        showError('삭제 실패: ' + result.error);
+    }
+}

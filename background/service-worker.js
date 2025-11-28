@@ -2,196 +2,228 @@
  * Service Worker - Background Script
  */
 
-console.log('Service Worker loaded successfully');
+// Import libraries
+try {
+    importScripts(
+        '/lib/utils.js',
+        '/lib/logger.js',
+        '/lib/storage.js',
+        '/lib/sheets-api.js',
+        '/lib/platform-templates.js',
+        '/lib/automation-engine.js',
+        '/lib/job-queue.js',
+        '/lib/scheduler.js'
+    );
+    console.log('Libraries imported successfully');
+} catch (e) {
+    console.error('Failed to import libraries:', e);
+}
+
+// Initialize Scheduler
+self.addEventListener('install', (event) => {
+    console.log('Service Worker installed');
+});
+
+self.addEventListener('activate', (event) => {
+    console.log('Service Worker activated');
+    // Initialize scheduler when service worker is activated
+    if (typeof scheduler !== 'undefined') {
+        scheduler.init();
+    }
+});
+
+// Initialize scheduler if already active
+if (typeof scheduler !== 'undefined') {
+    scheduler.init();
+}
 
 // Message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Message received:', request);
 
-    try {
-        switch (request.type) {
-            case 'GET_SHEETS':
-                chrome.storage.local.get('autopost_sheets', (result) => {
-                    sendResponse({ success: true, sheets: result.autopost_sheets || [] });
-                });
-                break;
+    // Async handler wrapper
+    const handleAsync = async () => {
+        try {
+            switch (request.type) {
+                // ===== Sheets =====
+                case 'GET_SHEETS':
+                    const sheets = await storage.get('autopost_sheets', []);
+                    return { success: true, sheets };
 
-            case 'ADD_SHEET':
-                chrome.storage.local.get('autopost_sheets', (result) => {
-                    const sheets = result.autopost_sheets || [];
+                case 'ADD_SHEET':
                     const newSheet = {
                         id: Date.now(),
                         ...request.sheet
                     };
-                    sheets.push(newSheet);
-                    chrome.storage.local.set({ autopost_sheets: sheets }, () => {
-                        sendResponse({ success: true, sheet: newSheet });
-                    });
-                });
-                break;
+                    const currentSheets = await storage.get('autopost_sheets', []);
+                    currentSheets.push(newSheet);
+                    await storage.set('autopost_sheets', currentSheets);
+                    return { success: true, sheet: newSheet };
 
-            case 'UPDATE_SHEET':
-                chrome.storage.local.get('autopost_sheets', (result) => {
-                    const sheets = result.autopost_sheets || [];
-                    const index = sheets.findIndex(s => s.id === request.sheetId);
-                    if (index !== -1) {
-                        sheets[index] = { ...sheets[index], ...request.sheet };
-                        chrome.storage.local.set({ autopost_sheets: sheets }, () => {
-                            sendResponse({ success: true });
-                        });
-                    } else {
-                        sendResponse({ success: false, error: 'Sheet not found' });
+                case 'UPDATE_SHEET':
+                    const sheetsToUpdate = await storage.get('autopost_sheets', []);
+                    const sheetIndex = sheetsToUpdate.findIndex(s => s.id === request.sheetId);
+                    if (sheetIndex !== -1) {
+                        sheetsToUpdate[sheetIndex] = { ...sheetsToUpdate[sheetIndex], ...request.sheet };
+                        await storage.set('autopost_sheets', sheetsToUpdate);
+                        return { success: true };
                     }
-                });
-                break;
+                    return { success: false, error: 'Sheet not found' };
 
-            case 'DELETE_SHEET':
-                chrome.storage.local.get('autopost_sheets', (result) => {
-                    const sheets = result.autopost_sheets || [];
-                    const filtered = sheets.filter(s => s.id !== request.sheetId);
-                    chrome.storage.local.set({ autopost_sheets: filtered }, () => {
-                        sendResponse({ success: true });
-                    });
-                });
-                break;
+                case 'DELETE_SHEET':
+                    const sheetsToDelete = await storage.get('autopost_sheets', []);
+                    const filteredSheets = sheetsToDelete.filter(s => s.id !== request.sheetId);
+                    await storage.set('autopost_sheets', filteredSheets);
+                    return { success: true };
 
-            case 'GET_PLATFORMS':
-                chrome.storage.local.get('autopost_platforms', (result) => {
-                    sendResponse({ success: true, platforms: result.autopost_platforms || [] });
-                });
-                break;
+                case 'READ_SHEET':
+                    const data = await sheetsAPI.readSheetByUrl(request.url);
+                    return { success: true, data };
 
-            case 'ADD_PLATFORM':
-                chrome.storage.local.get('autopost_platforms', (result) => {
-                    const platforms = result.autopost_platforms || [];
-                    const newPlatform = {
+                // ===== Platforms =====
+                case 'GET_PLATFORMS':
+                    const platforms = await storage.getPlatforms();
+                    return { success: true, platforms };
+
+                case 'ADD_PLATFORM':
+                    await storage.addPlatform(request.platform);
+                    return { success: true };
+
+                case 'DELETE_PLATFORM':
+                    await storage.deletePlatform(request.platformId);
+                    return { success: true };
+
+                // ===== Schedules =====
+                case 'GET_SCHEDULES':
+                    const schedules = await storage.getSchedules();
+                    return { success: true, schedules };
+
+                case 'CREATE_SCHEDULE':
+                    const newSchedule = {
                         id: Date.now(),
-                        ...request.platform
+                        createdAt: new Date().toISOString(),
+                        enabled: true,
+                        ...request.schedule
                     };
-                    platforms.push(newPlatform);
-                    chrome.storage.local.set({ autopost_platforms: platforms }, () => {
-                        sendResponse({ success: true });
-                    });
-                });
-                break;
 
-            case 'DELETE_PLATFORM':
-                chrome.storage.local.get('autopost_platforms', (result) => {
-                    const platforms = result.autopost_platforms || [];
-                    const filtered = platforms.filter(p => p.id !== request.platformId);
-                    chrome.storage.local.set({ autopost_platforms: filtered }, () => {
-                        sendResponse({ success: true });
-                    });
-                });
-                break;
+                    // 1. Save to storage
+                    await storage.addSchedule(newSchedule);
 
-            case 'GET_SCHEDULES':
-                chrome.storage.local.get('autopost_schedules', (result) => {
-                    sendResponse({ success: true, schedules: result.autopost_schedules || [] });
-                });
-                break;
+                    // 2. Register alarm
+                    await scheduler.createSchedule(newSchedule);
 
-            case 'GET_LOGS':
-                chrome.storage.local.get('autopost_logs', (result) => {
-                    const logs = result.autopost_logs || [];
-                    sendResponse({ success: true, logs: logs.slice(0, request.limit || 50) });
-                });
-                break;
+                    return { success: true, schedule: newSchedule };
 
-            case 'READ_SHEET':
-                handleReadSheet(request.url).then(data => {
-                    sendResponse({ success: true, data });
-                }).catch(error => {
-                    sendResponse({ success: false, error: error.message });
-                });
-                break;
+                case 'UPDATE_SCHEDULE':
+                    // 1. Update storage
+                    await storage.updateSchedule(request.scheduleId, request.updates);
 
-            default:
-                sendResponse({ success: false, error: 'Unknown request type' });
+                    // 2. Re-register alarm (if needed)
+                    // For simplicity, we can just get the updated schedule and recreate it
+                    const allSchedules = await storage.getSchedules();
+                    const updatedSchedule = allSchedules.find(s => s.id === request.scheduleId);
+
+                    if (updatedSchedule) {
+                        // If disabling, remove alarm
+                        if (request.updates.enabled === false) {
+                            await scheduler.deleteSchedule(request.scheduleId);
+                        } else {
+                            // Recreate alarm with new settings
+                            await scheduler.deleteSchedule(request.scheduleId); // Clear old one first
+                            await scheduler.createSchedule(updatedSchedule);
+                        }
+                    }
+
+                    return { success: true };
+
+                case 'DELETE_SCHEDULE':
+                    // 1. Remove from storage
+                    await storage.deleteSchedule(request.scheduleId);
+
+                    // 2. Remove alarm
+                    await scheduler.deleteSchedule(request.scheduleId);
+
+                    return { success: true };
+
+                case 'EXECUTE_SCHEDULE':
+                    const schedulesToExec = await storage.getSchedules();
+                    const scheduleToExec = schedulesToExec.find(s => s.id === request.scheduleId);
+
+                    if (!scheduleToExec) {
+                        return { success: false, error: 'Schedule not found' };
+                    }
+
+                    await scheduler.executeSchedule(scheduleToExec);
+                    return { success: true };
+
+                // ===== Logs =====
+                case 'GET_LOGS':
+                    const logs = await logger.getLogs(request.limit || 50);
+                    return { success: true, logs };
+
+                // ===== Direct Post =====
+                case 'PUBLISH_DIRECT_POST':
+                    try {
+                        const { postData } = request;
+                        const platform = postData.platform;
+
+                        await logger.log('info', `직접 작성된 글 게시 시작: "${postData.title}" -> ${platform.name}`);
+
+                        // 새 탭 열고 자동화 실행
+                        const tab = await chrome.tabs.create({
+                            url: platform.postUrl || platform.loginUrl,
+                            active: false
+                        });
+
+                        // 탭 로드 대기
+                        await new Promise((resolve) => {
+                            chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+                                if (tabId === tab.id && info.status === 'complete') {
+                                    chrome.tabs.onUpdated.removeListener(listener);
+                                    resolve();
+                                }
+                            });
+                        });
+
+                        // 게시 작업 생성
+                        const job = {
+                            id: `direct_${Date.now()}`,
+                            type: 'direct_post',
+                            tabId: tab.id,
+                            platform: platform,
+                            data: {
+                                title: postData.title,
+                                content: postData.content,
+                                category: postData.category || ''
+                            }
+                        };
+
+                        // 자동화 엔진 실행
+                        await automationEngine.execute(job);
+
+                        await logger.log('success', `직접 작성된 글 게시 완료: "${postData.title}"`);
+
+                        return { success: true };
+                    } catch (error) {
+                        await logger.log('error', `직접 게시 실패: ${error.message}`);
+                        return { success: false, error: error.message };
+                    }
+
+                // ===== Automation =====
+                case 'RUN_AUTOMATION':
+                    await automationEngine.execute(request.job);
+                    return { success: true };
+
+                default:
+                    return { success: false, error: 'Unknown request type: ' + request.type };
+            }
+        } catch (error) {
+            console.error('Error handling message:', error);
+            return { success: false, error: error.message };
         }
-    } catch (error) {
-        console.error('Error handling message:', error);
-        sendResponse({ success: false, error: error.message });
-    }
+    };
 
-    return true;
+    // Execute and send response
+    handleAsync().then(sendResponse);
+    return true; // Keep channel open for async response
 });
-
-// Sheet reading function
-async function handleReadSheet(url) {
-    try {
-        const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-        if (!match) {
-            throw new Error('Invalid Google Sheets URL');
-        }
-
-        const spreadsheetId = match[1];
-        const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
-
-        const response = await fetch(csvUrl);
-        if (!response.ok) {
-            if (response.status === 404) {
-                throw new Error('시트를 찾을 수 없습니다. 공유 설정을 확인하세요.');
-            } else if (response.status === 403) {
-                throw new Error('시트 접근 권한이 없습니다. "링크가 있는 모든 사용자"로 공유하세요.');
-            }
-            throw new Error(`Failed to fetch sheet (${response.status})`);
-        }
-
-        const csvText = await response.text();
-        const rows = parseCSV(csvText);
-
-        if (rows.length === 0) return [];
-
-        const headers = rows[0];
-        const data = rows.slice(1).map(row => {
-            const obj = {};
-            headers.forEach((header, index) => {
-                obj[header] = row[index] || '';
-            });
-            return obj;
-        });
-
-        return data;
-    } catch (error) {
-        console.error('Error reading sheet:', error);
-        throw error;
-    }
-}
-
-// CSV parser
-function parseCSV(csvText) {
-    const lines = csvText.split('\n').filter(line => line.trim());
-    const result = [];
-
-    for (let line of lines) {
-        const row = [];
-        let current = '';
-        let inQuotes = false;
-
-        for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-
-            if (char === '"') {
-                if (inQuotes && line[i + 1] === '"') {
-                    current += '"';
-                    i++;
-                } else {
-                    inQuotes = !inQuotes;
-                }
-            } else if (char === ',' && !inQuotes) {
-                row.push(current);
-                current = '';
-            } else {
-                current += char;
-            }
-        }
-
-        row.push(current);
-        result.push(row);
-    }
-
-    return result;
-}
-
-console.log('Service Worker initialization complete');
