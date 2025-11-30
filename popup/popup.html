@@ -20,8 +20,7 @@
 
     <!-- 탭 네비게이션 -->
     <nav class="tabs">
-      <button class="tab-btn active" data-tab="compose">✍️ 직접 작성</button>
-      <button class="tab-btn" data-tab="sheets">📄 시트 목록</button>
+      <button class="tab-btn active" data-tab="sheets">📄 시트 목록</button>
       <button class="tab-btn" data-tab="platforms">🌐 플랫폼</button>
       <button class="tab-btn" data-tab="schedules">⏰ 스케줄</button>
       <button class="tab-btn" data-tab="logs">📋 로그</button>
@@ -29,63 +28,8 @@
 
     <!-- 탭 콘텐츠 -->
     <main class="content">
-      <!-- 직접 작성 탭 -->
-      <section class="tab-content active" id="compose-tab">
-        <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">게시글 작성</h2>
-          </div>
-
-          <div class="compose-form">
-            <div class="form-group">
-              <label>플랫폼 선택</label>
-              <select id="compose-platform">
-                <option value="">플랫폼을 선택하세요</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>제목</label>
-              <input type="text" id="compose-title" placeholder="게시글 제목을 입력하세요">
-            </div>
-
-            <div class="form-group">
-              <label>카테고리 (선택사항)</label>
-              <input type="text" id="compose-category" placeholder="카테고리를 입력하세요">
-            </div>
-
-            <div class="form-group">
-              <label>내용</label>
-              <textarea id="compose-content" rows="12" placeholder="게시글 내용을 입력하세요"></textarea>
-            </div>
-
-            <div class="compose-actions">
-              <button class="btn btn-secondary" id="save-draft-btn">💾 초안 저장</button>
-              <button class="btn btn-primary" id="publish-now-btn">🚀 즉시 게시</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 저장된 초안 목록 -->
-        <div class="card" style="margin-top: 16px;">
-          <div class="card-header">
-            <h2 class="card-title">저장된 초안</h2>
-            <button class="btn btn-sm btn-secondary" id="refresh-drafts-btn">
-              🔄 새로고침
-            </button>
-          </div>
-
-          <div class="draft-list" id="draft-list">
-            <div class="empty-state">
-              <p>저장된 초안이 없습니다</p>
-              <p class="text-muted">작성 중인 글을 초안으로 저장하세요</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- 시트 목록 탭 -->
-      <section class="tab-content" id="sheets-tab">
+      <section class="tab-content active" id="sheets-tab">
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Google Sheets 목록</h2>
@@ -326,7 +270,6 @@
     </main>
   </div>
 
-  <script src="../lib/draft-manager.js"></script>
   <script src="popup.js"></script>
 </body>
 

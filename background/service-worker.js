@@ -11,6 +11,7 @@ try {
         '/lib/sheets-api.js',
         '/lib/platform-templates.js',
         '/lib/automation-engine.js',
+        '/lib/debugger-controller.js',
         '/lib/job-queue.js',
         '/lib/scheduler.js'
     );
@@ -160,54 +161,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 case 'GET_LOGS':
                     const logs = await logger.getLogs(request.limit || 50);
                     return { success: true, logs };
-
-                // ===== Direct Post =====
-                case 'PUBLISH_DIRECT_POST':
-                    try {
-                        const { postData } = request;
-                        const platform = postData.platform;
-
-                        await logger.log('info', `직접 작성된 글 게시 시작: "${postData.title}" -> ${platform.name}`);
-
-                        // 새 탭 열고 자동화 실행
-                        const tab = await chrome.tabs.create({
-                            url: platform.postUrl || platform.loginUrl,
-                            active: false
-                        });
-
-                        // 탭 로드 대기
-                        await new Promise((resolve) => {
-                            chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-                                if (tabId === tab.id && info.status === 'complete') {
-                                    chrome.tabs.onUpdated.removeListener(listener);
-                                    resolve();
-                                }
-                            });
-                        });
-
-                        // 게시 작업 생성
-                        const job = {
-                            id: `direct_${Date.now()}`,
-                            type: 'direct_post',
-                            tabId: tab.id,
-                            platform: platform,
-                            data: {
-                                title: postData.title,
-                                content: postData.content,
-                                category: postData.category || ''
-                            }
-                        };
-
-                        // 자동화 엔진 실행
-                        await automationEngine.execute(job);
-
-                        await logger.log('success', `직접 작성된 글 게시 완료: "${postData.title}"`);
-
-                        return { success: true };
-                    } catch (error) {
-                        await logger.log('error', `직접 게시 실패: ${error.message}`);
-                        return { success: false, error: error.message };
-                    }
 
                 // ===== Automation =====
                 case 'RUN_AUTOMATION':

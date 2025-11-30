@@ -2,63 +2,85 @@
  * Content Script - 페이지 내 자동화 수행
  */
 
-// 알림/확인 창 자동 차단 스크립트 주입
-(function () {
-    const script = document.createElement('script');
-    script.textContent = `
-        (function() {
-            window.alert = function(msg) { console.log('[Auto-Post] Alert dismissed:', msg); return true; };
-            window.confirm = function(msg) { console.log('[Auto-Post] Confirm dismissed (Cancel):', msg); return false; };
-            window.prompt = function(msg) { console.log('[Auto-Post] Prompt dismissed (Cancel):', msg); return null; };
-            
-            // beforeunload 이벤트 차단
-            window.addEventListener('beforeunload', function(e) {
-                e.preventDefault();
-                delete e['returnValue'];
-            }, true);
-            
-            console.log('[Auto-Post] Alert blocker activated');
-        })();
-    `;
-    (document.head || document.documentElement).appendChild(script);
-    script.remove();
-})();
-
-// 페이지 로드 후 자동으로 팝업 닫기
-window.addEventListener('load', function () {
-    setTimeout(function () {
-        console.log('[Auto-Post] Looking for popup to close...');
-
-        // 방법 1: "취소" 텍스트로 검색
-        let found = false;
-        const buttons = document.querySelectorAll('button, a, .btn');
-        for (const btn of buttons) {
-            if (btn.textContent.trim() === '취소') {
-                console.log('[Auto-Post] Found cancel button, clicking...');
-                btn.click();
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            console.log('[Auto-Post] No popup found');
-        }
-    }, 2000);
-});
-
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // async 함수를 즉시 실행하고 결과를 sendResponse로 전달
     handleAutomationMessage(request, sendResponse);
+    // 비동기 응답을 기다리도록 true 반환
     return true;
 });
 
+/**
+ * CodeMirror 에디터에 값 설정하는 헬퍼 함수
+ */
+async function setCodeMirrorValue(element, value) {
+    console.log('[Auto-Post] ========== setCodeMirrorValue 시작 ==========');
+    console.log('[Auto-Post] 설정할 값 길이:', value.length);
+    console.log('[Auto-Post] 값 미리보기:', value.substring(0, 200));
+
+    let codeMirrorInstance = null;
+
+    // 방법 1: 페이지의 모든 CodeMirror 찾기
+    const allCodeMirrors = document.querySelectorAll('.CodeMirror');
+    console.log('[Auto-Post] 페이지의 .CodeMirror 개수:', allCodeMirrors.length);
+
+    for (const cm of allCodeMirrors) {
+        if (cm.CodeMirror) {
+            codeMirrorInstance = cm.CodeMirror;
+            console.log('[Auto-Post] ✓ CodeMirror 인스턴스 찾음!');
+            break;
+        }
+    }
+
+    // 방법 2: iframe 내부 검색
+    if (!codeMirrorInstance) {
+        const iframes = document.querySelectorAll('iframe');
+        console.log('[Auto-Post] iframe 개수:', iframes.length);
+        for (const iframe of iframes) {
+            try {
+                if (iframe.contentDocument) {
+                    const cmInIframe = iframe.contentDocument.querySelectorAll('.CodeMirror');
+                    for (const cm of cmInIframe) {
+                        if (cm.CodeMirror) {
+                            codeMirrorInstance = cm.CodeMirror;
+                            console.log('[Auto-Post] ✓ iframe 내부에서 CodeMirror 찾음!');
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                // CORS 오류 무시
+            }
+            if (codeMirrorInstance) break;
+        }
+    }
+
+    // CodeMirror 인스턴스로 값 설정
+    if (codeMirrorInstance) {
+        console.log('[Auto-Post] CodeMirror.setValue() 호출');
+        codeMirrorInstance.setValue(value);
+        codeMirrorInstance.refresh();
+
+        // 값 확인
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const currentValue = codeMirrorInstance.getValue();
+        console.log('[Auto-Post] ✓ 설정 완료! 현재 값 길이:', currentValue.length);
+        console.log('[Auto-Post] 값 일치:', currentValue === value);
+        return true;
+    }
+
+    console.error('[Auto-Post] CodeMirror를 찾을 수 없음');
+    return false;
+}
+
 async function handleAutomationMessage(request, sendResponse) {
     try {
+        let result;
+
         switch (request.action) {
             case 'LOGIN':
-                const loginResult = await handleLogin(request);
-                sendResponse({ success: true, ...loginResult });
+                result = await handleLogin(request);
+                sendResponse({ success: true, ...result });
                 break;
             case 'FILL_FORM':
                 await handleFillForm(request);
@@ -66,6 +88,14 @@ async function handleAutomationMessage(request, sendResponse) {
                 break;
             case 'FILL_INPUT':
                 await handleFillInput(request);
+                sendResponse({ success: true });
+                break;
+            case 'FILL_CODEMIRROR':
+                await handleFillCodeMirror(request);
+                sendResponse({ success: true });
+                break;
+            case 'COPY_TO_CLIPBOARD':
+                await handleCopyToClipboard(request);
                 sendResponse({ success: true });
                 break;
             case 'TYPE':
@@ -88,7 +118,7 @@ async function handleAutomationMessage(request, sendResponse) {
                 sendResponse({ success: false, error: '알 수 없는 액션' });
         }
     } catch (error) {
-        console.error('Automation error:', error);
+        console.error('[Auto-Post] Automation error:', error);
         sendResponse({ success: false, error: error.message });
     }
 }
@@ -142,6 +172,39 @@ async function handleFillInput(request) {
         fillInput(element, value);
     }
     console.log('Input filled:', selector);
+}
+
+async function handleFillCodeMirror(request) {
+    const { selector, value } = request;
+    console.log('[Auto-Post] handleFillCodeMirror 호출, 값 길이:', value.length);
+
+    const success = await setCodeMirrorValue(null, value);
+
+    if (!success) {
+        throw new Error('CodeMirror 에디터를 찾을 수 없습니다');
+    }
+
+    console.log('[Auto-Post] CodeMirror filled 완료');
+}
+
+async function handleCopyToClipboard(request) {
+    const { value } = request;
+    console.log('[Auto-Post] 클립보드에 복사 중, 길이:', value.length);
+
+    try {
+        await navigator.clipboard.writeText(value);
+        console.log('[Auto-Post] 클립보드 복사 성공');
+    } catch (error) {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        console.log('[Auto-Post] 클립보드 복사 성공 (fallback)');
+    }
 }
 
 async function handleType(request) {
