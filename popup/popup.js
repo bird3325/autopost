@@ -227,7 +227,9 @@ async function savePlatform() {
             },
             fieldMapping: {
                 title: document.getElementById('map-title-col').value,
-                link: document.getElementById('map-link-col').value
+                link: document.getElementById('map-link-col').value,
+                category: document.getElementById('map-category-col').value,
+                tags: document.getElementById('map-tags-col').value
             }
         };
         if (!platform.name) { showError('플랫폼 이름을 입력하세요'); return; }

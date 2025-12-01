@@ -110,6 +110,10 @@ async function handleAutomationMessage(request, sendResponse) {
                 await handleClickByText(request);
                 sendResponse({ success: true });
                 break;
+            case 'GET_COORDINATES_BY_TEXT':
+                const coords = await handleGetCoordinatesByText(request);
+                sendResponse({ success: true, ...coords });
+                break;
             case 'WAIT':
                 await wait(request.ms || 1000);
                 sendResponse({ success: true });
@@ -286,5 +290,4 @@ function clickElement(element) {
 }
 
 function wait(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
